@@ -22,7 +22,7 @@ const char* password = "xyz12345.";
 
 const int httpsPort = 443;
 const String url = "http://api.coindesk.com/v1/bpi/currentprice/BTC.json";
-const String ethUrl = "https://api.moonpay.com/v3/currencies/eth/buy_quote?apiKey=pk_live_R5Lf25uBfNZyKwccAZpzcxuL3ZdJ3Hc&baseCurrencyAmount=6000&baseCurrencyCode=usd&fixed=true&areFeesIncluded=true&quoteType=principal";
+const String ethUrl = "https://api.etherscan.io/api?module=stats&action=ethprice&apikey=89SD4YRTF3P7SXZ36YDHWTE5QUEU3653CS";
 const String historyURL = "http://api.coindesk.com/v1/bpi/historical/close.json";
 const String cryptoCode = "BTC";
 const String cryptoCode2 = "ETH";
@@ -35,6 +35,7 @@ float distanceInch;
 
 WiFiClient client;
 HTTPClient http;
+HTTPClient http2;
 
 String formattedDate;
 String dayStamp;
@@ -118,7 +119,7 @@ void setup() {
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
     Serial.println(F("SSD1306 allocation failed"));
     for (;;)
-      ; 
+      ;
   }
 
   display.clearDisplay();
@@ -185,8 +186,11 @@ void loop() {
     Serial.println(httpCode);
 
     String BTCUSDPrice = doc["bpi"]["USD"]["rate_float"].as<String>();
+    double btcdouble = BTCUSDPrice.toDouble();
+    String formattedBTC = String(btcdouble, 1);
     String lastUpdated = doc["time"]["updated"].as<String>();
     http.end();
+
 
     Serial.print("Getting history...");
     StaticJsonDocument<2000> historyDoc;
@@ -211,7 +215,7 @@ void loop() {
     }
 
     Serial.print("BTCUSD Price: ");
-    Serial.println(BTCUSDPrice.toDouble());
+    Serial.println(formattedBTC);
 
     Serial.print("Yesterday's Price: ");
     Serial.println(yesterdayPrice);
@@ -232,13 +236,14 @@ void loop() {
     printCenter("BTC/USD", 0, 0);
 
     display.setTextSize(2);
-    printCenter("$" + BTCUSDPrice, 0, 20);
+    printCenter("$" + formattedBTC, 0, 20);
 
     display.setTextSize(1);
     dayChangeString = dayChangeString + percentChange + "%";
     printCenter(dayChangeString, 0, 55);
     display.display();
     http.end();
+    delay(2000);
   }
 
 
@@ -247,36 +252,52 @@ void loop() {
     Serial.print("Connecting to ");
     Serial.println(ethUrl);
 
-    http.begin(ethUrl);
-    int httpCode2 = http.GET();
-    DynamicJsonDocument doc2(5120);
-    DeserializationError error2 = deserializeJson(doc2, http.getString());
+    http2.begin(ethUrl);
+    http2.setTimeout(15000);
+    int httpCode2 = http2.GET();
 
-    if (error2) {
-      Serial.print(F("deserializeJson Failed"));
-      Serial.println(error2.f_str());
-      delay(2500);
-      return;
+    if (httpCode2 > 0) {
+      // HTTP header has been sent and Server response header has been handled
+      Serial.print("HTTP Status Code2: ");
+      Serial.println(httpCode2);
+
+      // Get the response payload
+      String payload = http2.getString();
+      Serial.print("Response: ");
+      Serial.println(payload);
+
+      StaticJsonDocument<2000> doc2;
+      DeserializationError error2 = deserializeJson(doc2, payload);
+
+      if (error2) {
+        Serial.print(F("deserializeJson Failed: "));
+        Serial.println(error2.f_str());
+        delay(2500);
+        http2.end();
+        return;
+      }
+
+      String ETHUSDPrice = doc2["result"]["ethusd"].as<String>();
+      double ethdouble = ETHUSDPrice.toDouble();
+      String formattedPrice = String(ethdouble, 1);
+      Serial.print("ETHUSD Price: ");
+      Serial.println(formattedPrice);
+
+      display.clearDisplay();
+      display.setTextSize(1);
+      printCenter("ETH/USD", 0, 0);
+
+      display.setTextSize(2);
+      printCenter("$" + formattedPrice, 0, 20);
+
+      display.display();
+      delay(2000);
+    } else {
+      Serial.print("HTTP GET request failed, error: ");
+      Serial.println(http2.errorToString(httpCode2).c_str());
     }
 
-    Serial.print("HTTP Status Code2: ");
-    Serial.println(httpCode2);
-
-    String ETHUSDPrice = doc2["quoteCurrencyPrice"].as<String>();
-    // String lastUpdated = doc["time"]["updated"].as<String>();
-    http.end();
-
-    Serial.print("ETHUSD Price: ");
-    Serial.println(ETHUSDPrice.toDouble());
-
-    display.clearDisplay();
-    display.setTextSize(1);
-    printCenter("ETH/USD", 0, 0);
-
-    display.setTextSize(2);
-    printCenter("$ETHUSDPrice" , 0, 20);
-
-    display.display();
+    http2.end();
   }
 
 
@@ -286,7 +307,7 @@ void loop() {
 void printCenter(const String buf, int x, int y) {
   int16_t x1, y1;
   uint16_t w, h;
-  display.getTextBounds(buf, x, y, &x1, &y1, &w, &h); 
-  display.setCursor((x - w / 2) + (128 / 2), y);      
-  display.print(buf);                            
+  display.getTextBounds(buf, x, y, &x1, &y1, &w, &h);
+  display.setCursor((x - w / 2) + (128 / 2), y);
+  display.print(buf);
 }
